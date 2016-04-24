@@ -1,7 +1,7 @@
 Ruby Hooks Handler for Dredd API Testing Framework
 ==================================================
 
-[![Build Status](https://travis-ci.org/apiaryio/dredd-hooks-ruby.svg?branch=master)](https://travis-ci.org/apiaryio/dredd-hooks-ruby)
+[![Build Status](https://travis-ci.org/gonzalo-bulnes/dredd-hooks-ruby.svg?branch=master)](https://travis-ci.org/gonzalo-bulnes/dredd-hooks-ruby)
 [![Dependency Status](https://gemnasium.com/badges/github.com/gonzalo-bulnes/dredd-hooks-ruby.svg)](https://gemnasium.com/github.com/gonzalo-bulnes/dredd-hooks-ruby)
 
 Test your API with the [Dredd HTTP API testing framework](https://github.com/apiaryio/dredd) and write [hooks](http://dredd.readthedocs.org/en/latest/hooks/) in Ruby!
