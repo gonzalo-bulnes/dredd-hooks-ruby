@@ -1,86 +1,76 @@
 require 'socket'
-require 'json'
+
+require 'dredd_hooks/server/buffer'
+require 'dredd_hooks/server/events_handler'
 
 module DreddHooks
+
+  # The hooks worker server
   class Server
-    #
-    # The hooks worker server
-    #
+
+    attr_reader :buffer, :error, :events_handler, :out, :server
+    private :buffer, :error, :events_handler, :out, :server
 
     HOST = '127.0.0.1'
     PORT = 61321
     MESSAGE_DELIMITER = "\n"
 
-    @server = nil
-
-    def process_message message, client
-      event = message['event']
-      data = message['data']
-
-      if event == "beforeEach"
-        data = DreddHooks::Runner.run_before_each_hooks_for_transaction data
-        data = DreddHooks::Runner.run_before_hooks_for_transaction data
-      end
-
-      if event == "beforeEachValidation"
-        data = DreddHooks::Runner.run_before_each_validation_hooks_for_transaction data
-        data = DreddHooks::Runner.run_before_validation_hooks_for_transaction data
-      end
-
-      if event == "afterEach"
-        data = DreddHooks::Runner.run_after_hooks_for_transaction data
-        data = DreddHooks::Runner.run_after_each_hooks_for_transaction data
-      end
-
-      if event == "beforeAll"
-        data = DreddHooks::Runner.run_before_all_hooks_for_transactions data
-      end
-
-      if event == "afterAll"
-        data = DreddHooks::Runner.run_after_all_hooks_for_transactions data
-      end
-
-      to_send = {
-        "uuid" => message['uuid'],
-        "event" => event,
-        "data" => data
-      }.to_json
-      client.puts to_send + "\n"
+    def initialize(error=STDERR, out=STDOUT)
+      @error = error
+      @out = out
+      @server = TCPServer.new(HOST, PORT)
+      @buffer = Buffer.new(MESSAGE_DELIMITER)
+      @events_handler = EventsHandler.new
     end
 
     def run
-      @server = TCPServer.new HOST, PORT
+      disable_buffering(out)
       loop do
-        #Thread.abort_on_exception=true
-        client = @server.accept
-        STDERR.puts 'Dredd connected to Ruby Dredd hooks worker'
-        buffer = ""
+        client = server.accept
+        out.puts 'Dredd connected to Ruby Dredd hooks worker'
+        buffer.flush!
         while (data = client.recv(10))
-          buffer += data
-          if buffer.include? MESSAGE_DELIMITER
-            splitted_buffer = buffer.split(MESSAGE_DELIMITER)
-            buffer = ""
-
-            messages = []
-
-            splitted_buffer.each do |message|
-              begin
-                messages.push JSON.parse(message)
-
-              rescue JSON::ParserError
-                # if message aftger delimiter is not parseable json, it's
-                # a chunk of next message, put it back to the buffer
-                buffer += message
-              end
-            end
+          buffer << data
+          if buffer.any_message?
+            messages = buffer.unshift_messages
 
             messages.each do |message|
-              process_message message, client
+              response = process_message(message)
+              client.puts response + MESSAGE_DELIMITER
             end
           end
         end
         client.close
       end
     end
+
+    private
+
+      # Write to a file (e.g. STDOUT) without delay
+      #
+      # See https://stackoverflow.com/q/23001033
+      # and http://ruby-doc.org/core-2.3.1/IO.html#method-i-sync-3D
+      def disable_buffering(file)
+        file.sync = true
+      end
+
+      def process_message(message)
+        event = message['event']
+        transaction = message['data']
+
+        transaction = events_handler.handle(event, transaction)
+
+        response(message['uuid'], event, transaction)
+      end
+
+      def response(message_uuid, event, transaction)
+        {
+          uuid: message_uuid,
+          event: event,
+          data: transaction,
+        }.to_json
+      end
+
   end
 end
+
